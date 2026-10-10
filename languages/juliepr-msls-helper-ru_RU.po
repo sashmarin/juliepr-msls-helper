@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: Juliepr MSLS Helper 1.0.0\n"
+"Project-Id-Version: Juliepr MSLS Helper 1.1.0\n"
 "Language: ru_RU\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -13,8 +13,8 @@ msgid "Juliepr MSLS Helper"
 msgstr "Juliepr MSLS Helper"
 
 #: juliepr-msls-helper.php
-msgid "Extends MSLS with shared media, source date/slug/author copying, imported link rewriting and 302 redirects to original content."
-msgstr "Дополняет MSLS: использует общую медиатеку, копирует дату, slug и автора в новые переводы, заменяет ссылки в импортируемом тексте и перенаправляет при 404 на оригинал с кодом 302."
+msgid "Extends MSLS with shared media, source date/slug/author copying, imported link rewriting, 302 redirects to original content and daily orphaned option cleanup."
+msgstr "Дополняет MSLS: использует общую медиатеку, копирует дату, slug и автора в новые переводы, заменяет ссылки в импортируемом тексте, перенаправляет при 404 на оригинал с кодом 302 и ежедневно очищает осиротевшие опции."
 
 #: includes/Settings.php
 msgid "You do not have permission to manage these settings."
@@ -75,3 +75,11 @@ msgstr "По умолчанию: 1. Укажите активный сайт э�
 #: includes/Settings.php
 msgid "Enter a positive source site ID. When redirects are enabled, the source must be an active site in this network."
 msgstr "Укажите положительный ID исходного сайта. При включённом редиректе исходный сайт должен быть активным сайтом этой сети."
+
+#: includes/Settings.php
+msgid "Clean up orphaned MSLS options daily"
+msgstr "Ежедневно очищать осиротевшие опции MSLS"
+
+#: includes/Settings.php
+msgid "Delete msls_ID and msls_term_ID options only when the corresponding post or term no longer exists on that site. All active sites in this network are processed in batches through WP-Cron."
+msgstr "Удалять опции msls_ID и msls_term_ID, только если соответствующей записи или термина больше нет на этом сайте. Все активные сайты этой сети обрабатываются пакетами через WP-Cron."

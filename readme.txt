@@ -2,10 +2,10 @@
 Contributors: sashmarin
 Requires at least: 6.5
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.1.0
 
 Extends Multisite-Language-Switcher (https://github.com/lloc/Multisite-Language-Switcher/) with shared media,
-source date/slug/author copying, imported link rewriting and 302 redirects to original content.
+source date/slug/author copying, imported link rewriting, 302 redirects to original content and daily orphaned option cleanup.
 
 
 == Description ==
@@ -37,6 +37,8 @@ Open Network Admin -> Settings -> MSLS Helper.
 * Redirect missing translations to the source site: enabled by default.
 * Source site ID for 404 redirects: defaults to 1. Choose an active site in this
   network. This value only controls the 404 fallback.
+* Clean up orphaned MSLS options daily: enabled by default. Processes all
+  active sites in this network in batches through WP-Cron.
 * Delete settings when uninstalling the plugin: disabled by default. Deletes
   only the helper's network settings when the plugin is removed. Deactivation,
   posts, translation links and media are unaffected.
@@ -74,6 +76,31 @@ requests and post-ID query requests are excluded. Missing or unpublished
 originals leave the 404 unchanged. The source must be an active site in this
 network. The helper does not regenerate missing rewrite rules during a lookup.
 
+== Orphaned MSLS Options ==
+
+Daily cleanup deletes only options named exactly msls_NUMBER or
+msls_term_NUMBER whose corresponding local post or term is absent from that
+site's database. Existing posts of every type and status (including drafts and
+trash), existing terms, and other option names are preserved. The option values
+and translation references on other sites are not edited. Shared attachment
+records on other sites do not count as local owners of these MSLS options.
+
+The network's main site hosts the daily WP-Cron event. Each invocation processes
+one active site and up to 100 orphan candidates; further batches run at least a
+minute apart. Deleted, archived and spam sites are skipped. The first run is
+scheduled one minute after the next request with the plugin enabled. WP-Cron
+needs traffic on the network's main site or an external cron runner targeting
+that site, so these are scheduled times.
+Database errors stop a batch rather than treating owners as missing. Options
+are removed with delete_option() to invalidate WordPress object caches.
+
+Disabling cleanup removes its scheduled events and progress. Deactivation and
+uninstall also remove this runtime state, while saved settings follow the
+uninstall preference. Cleanup works without MSLS being active.
+
+On a disposable multisite, run wp eval-file tests/orphaned-options.php from
+this directory. This test performs real option cleanup on the current site.
+
 == Installation ==
 
 1. Copy juliepr-msls-helper into wp-content/plugins/ as a standalone plugin.
@@ -105,6 +132,11 @@ into a previously existing post or draft preserves its date, slug and author. Th
 not depend on the selected post-fields importer.
 
 == Changelog ==
+
+= 1.1.0 =
+* Clean up orphaned msls_NUMBER and msls_term_NUMBER options daily across active network sites.
+* Process up to 100 candidates per WP-Cron batch, preserving options for existing posts and terms.
+* Add an enabled-by-default network setting; clear scheduled cleanup and progress on disable, deactivation or uninstall.
 
 = 1.0.0 =
 * Add a configurable source site and optional HTTP 302 fallback for missing translations.

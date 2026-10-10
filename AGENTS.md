@@ -40,6 +40,8 @@ unless the user explicitly requests that scope.
 - `includes/SharedMediaThumbnailImporter.php`: custom featured image importer.
 - `includes/TranslationPostFields.php`: source date/slug/author filters for new translations.
 - `includes/Settings.php`: network settings page and option handling.
+- `includes/OrphanedOptions.php`: daily batched cleanup of orphaned local MSLS options.
+- `tests/orphaned-options.php`: disposable WordPress option cleanup checks.
 - `includes/FallbackRedirect.php`: exact-path 404 fallback to a configured site.
 - `includes/ContentLinks.php`: imported HTML anchor URL rewriting.
 - `includes/LinkRewritingPostFieldsImporter.php`: standard post-fields importer
@@ -60,8 +62,8 @@ At `plugins_loaded`, priority 20, the bootstrap checks for
 `lloc\Msls\ContentImport\Importers\BaseImporter`. If unavailable, it returns
 without loading the subclass or registering the importer filter.
 The settings page is registered independently and remains available without MSLS.
-The network option `juliepr_msls_helper_settings` contains five boolean keys:
-`shared_media`, `copy_post_fields`, `rewrite_links`, and `fallback_redirect` default
+The network option `juliepr_msls_helper_settings` contains six boolean keys:
+`shared_media`, `copy_post_fields`, `rewrite_links`, `cleanup_orphans`, and `fallback_redirect` default
 to true; `delete_on_uninstall` defaults to false. The integer `fallback_blog_id`
 defaults to 1 and must be positive. When fallback is enabled, saving validates
 that the source site is active and in the current network.
@@ -126,7 +128,7 @@ It returns the incoming post-fields array unchanged.
   second can still produce Immediately until a subsequent save.
 - Apart from the standard post-fields subclass described below, other MSLS
   importers retain their behavior. There is no migration
-  or bulk repair. Deactivation preserves settings. Uninstall removes only the
+  or bulk repair of post fields. Deactivation preserves settings. Uninstall removes only the
   helper option for networks that opted in, without touching posts, links, media,
   or other plugins' settings.
 - Text link rewriting is controlled by `rewrite_links`, enabled by default,
@@ -160,6 +162,13 @@ In the parent checkout, inspect `includes/ContentImport/Importers/ImportersBaseF
 `includes/ContentImport/Importers/PostThumbnail/Linking.php` to verify hook behavior.
 For Quick Create, inspect `includes/RestApi/RestApi.php`.
 
+- Orphan cleanup runs daily on the network main site, independently of MSLS.
+  Process one active site and up to 100 orphan candidates per cron invocation,
+  continuing in single events. Match only exact numeric MSLS post/term option
+  names and confirm local ownership through database tables, regardless of status.
+  Delete with the Options API for cache invalidation. Preserve other names and
+  translation values. Clear cron/progress/locks on disable, deactivate and uninstall.
+
 ## Coding and localization
 
 Keep changes small, use WordPress coding conventions (tabs and spaced function
@@ -192,6 +201,8 @@ php -l juliepr-msls-helper.php
 php -l includes/SharedMediaThumbnailImporter.php
 php -l includes/TranslationPostFields.php
 php -l includes/Settings.php
+php -l includes/OrphanedOptions.php
+php -l tests/orphaned-options.php
 php -l includes/FallbackRedirect.php
 php -l includes/ContentLinks.php
 php -l includes/LinkRewritingPostFieldsImporter.php

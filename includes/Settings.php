@@ -21,6 +21,7 @@ final class Settings {
 		'rewrite_links'       => true,
 		'fallback_redirect'   => true,
 		'fallback_blog_id'    => 1,
+		'cleanup_orphans'     => true,
 		'delete_on_uninstall' => false,
 	);
 
@@ -87,6 +88,10 @@ final class Settings {
 				'label'       => __( 'Source site ID for 404 redirects', 'juliepr-msls-helper' ),
 				'description' => __( 'Default: 1. Choose an active site in this network. Redirects are never applied on the source site itself.', 'juliepr-msls-helper' ),
 			),
+			'cleanup_orphans'     => array(
+				'label'       => __( 'Clean up orphaned MSLS options daily', 'juliepr-msls-helper' ),
+				'description' => __( 'Delete msls_ID and msls_term_ID options only when the corresponding post or term no longer exists on that site. All active sites in this network are processed in batches through WP-Cron.', 'juliepr-msls-helper' ),
+			),
 			'delete_on_uninstall' => array(
 				'label'       => __( 'Delete settings when uninstalling the plugin', 'juliepr-msls-helper' ),
 				'description' => __( 'Remove only the helper settings when the plugin is deleted. Posts and media are preserved.', 'juliepr-msls-helper' ),
@@ -149,6 +154,7 @@ final class Settings {
 		}
 
 		update_site_option( self::OPTION, $values );
+		OrphanedOptions::synchronize();
 		wp_safe_redirect( network_admin_url( 'settings.php?page=' . self::PAGE . '&updated=1' ) );
 		exit;
 	}

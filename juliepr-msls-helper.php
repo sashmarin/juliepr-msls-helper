@@ -2,8 +2,8 @@
 /**
  * Plugin Name: Juliepr MSLS Helper
  * Plugin URI:        https://github.com/sashmarin/juliepr-msls-helper
- * Description: Extends MSLS with shared media, source date/slug/author copying, imported link rewriting and 302 redirects to original content.
- * Version: 1.0.0
+ * Description: Extends MSLS with shared media, source date/slug/author copying, imported link rewriting, 302 redirects to original content and daily orphaned option cleanup.
+ * Version: 1.1.0
  * Author: Sergei Ashmarin
  * Author URI: https://github.com/sashmarin
  * Requires at least: 6.5
@@ -27,6 +27,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 require_once __DIR__ . '/includes/Settings.php';
 Settings::register();
+require_once __DIR__ . '/includes/OrphanedOptions.php';
+OrphanedOptions::register();
+register_deactivation_hook( __FILE__, array( OrphanedOptions::class, 'deactivate' ) );
 
 add_action(
 	'init',
