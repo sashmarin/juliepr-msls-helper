@@ -90,7 +90,7 @@ final class Settings {
 			),
 			'cleanup_orphans'     => array(
 				'label'       => __( 'Clean up orphaned MSLS options daily', 'juliepr-msls-helper' ),
-				'description' => __( 'Delete msls_ID and msls_term_ID options only when the corresponding post or term no longer exists on that site. All active sites in this network are processed in batches through WP-Cron.', 'juliepr-msls-helper' ),
+				'description' => __( 'Clean up msls_ID and msls_term_ID options and references to missing translations. Preserve valid links and languages without a unique target site. All active sites in this network are processed in batches through WP-Cron.', 'juliepr-msls-helper' ),
 			),
 			'delete_on_uninstall' => array(
 				'label'       => __( 'Delete settings when uninstalling the plugin', 'juliepr-msls-helper' ),

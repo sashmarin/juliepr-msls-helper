@@ -30,6 +30,6 @@ return array(
 		'Default: 1. Choose an active site in this network. Redirects are never applied on the source site itself.' => 'По умолчанию: 1. Укажите активный сайт этой сети. На самом исходном сайте редирект не выполняется.',
 		'Enter a positive source site ID. When redirects are enabled, the source must be an active site in this network.' => 'Укажите положительный ID исходного сайта. При включённом редиректе исходный сайт должен быть активным сайтом этой сети.',
 		'Clean up orphaned MSLS options daily' => 'Ежедневно очищать осиротевшие опции MSLS',
-		'Delete msls_ID and msls_term_ID options only when the corresponding post or term no longer exists on that site. All active sites in this network are processed in batches through WP-Cron.' => 'Удалять опции msls_ID и msls_term_ID, только если соответствующей записи или термина больше нет на этом сайте. Все активные сайты этой сети обрабатываются пакетами через WP-Cron.',
+		'Clean up msls_ID and msls_term_ID options and references to missing translations. Preserve valid links and languages without a unique target site. All active sites in this network are processed in batches through WP-Cron.' => 'Очищать опции msls_ID и msls_term_ID и ссылки на отсутствующие переводы. Сохранять действующие связи и языки, для которых нельзя однозначно определить сайт. Все активные сайты этой сети обрабатываются пакетами через WP-Cron.',
 	),
 );

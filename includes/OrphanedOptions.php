@@ -9,7 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Daily, bounded cleanup of options whose local MSLS owner no longer exists.
+ * Daily, bounded cleanup of missing MSLS owners and broken translation references.
  */
 final class OrphanedOptions {
 	public const DAILY_HOOK = 'juliepr_msls_helper_cleanup_daily';
@@ -108,44 +108,159 @@ final class OrphanedOptions {
 	}
 
 	/**
-	 * Read database tables directly: shared-media filters must not invent a local owner.
-	 * Delete via the Options API so persistent object caches are invalidated.
+	 * Inspect every numeric MSLS option, including links with an existing owner.
+	 * Read tables directly so shared-media filters cannot invent local records.
 	 *
 	 * @return array<string, int|bool>|null Null means a database error; retry later.
 	 */
 	public static function clean_site( int $cursor = 0 ): ?array {
 		global $wpdb;
 
-		$missing = "((o.option_name REGEXP '^msls_[0-9]+$' AND NOT EXISTS (SELECT 1 FROM {$wpdb->posts} p WHERE p.ID = CAST(SUBSTRING(o.option_name, 6) AS UNSIGNED)))
-			OR (o.option_name REGEXP '^msls_term_[0-9]+$' AND NOT EXISTS (SELECT 1 FROM {$wpdb->terms} t WHERE t.term_id = CAST(SUBSTRING(o.option_name, 11) AS UNSIGNED))))";
 		$rows = $wpdb->get_results( $wpdb->prepare(
-			"SELECT o.option_id, o.option_name FROM {$wpdb->options} o WHERE o.option_id > %d AND {$missing} ORDER BY o.option_id LIMIT %d",
+			"SELECT option_id, option_name FROM {$wpdb->options} WHERE option_id > %d AND option_name REGEXP '^msls_(term_)?[0-9]+$' ORDER BY option_id LIMIT %d",
 			$cursor,
 			self::LIMIT
 		) );
 		if ( $wpdb->last_error || ! is_array( $rows ) ) {
 			return null;
 		}
+		$sites = self::language_sites();
+		if ( null === $sites ) {
+			return null;
+		}
 		$deleted = 0;
+		$updated = 0;
 		foreach ( $rows as $row ) {
 			$cursor = (int) $row->option_id;
-			if ( ! preg_match( '/\Amsls_(?:term_)?[0-9]+\z/', $row->option_name ) ) {
+			if ( ! preg_match( '/\Amsls_(term_)?([0-9]+)\z/', $row->option_name, $match ) ) {
 				continue;
 			}
-			// Recheck immediately before deletion, including the exact option name.
-			$orphan = $wpdb->get_var( $wpdb->prepare(
-				"SELECT o.option_id FROM {$wpdb->options} o WHERE o.option_id = %d AND BINARY o.option_name = %s AND {$missing}",
-				(int) $row->option_id,
-				$row->option_name
+			$is_term = ! empty( $match[1] );
+			$exists = self::owner_exists( (int) $match[2], $is_term );
+			if ( null === $exists ) {
+				return null;
+			}
+			if ( ! $exists ) {
+				if ( self::delete( $row->option_name, (int) $match[2], $is_term ) ) {
+					++$deleted;
+				}
+				if ( $wpdb->last_error ) {
+					return null;
+				}
+				continue;
+			}
+
+			$links = get_option( $row->option_name );
+			if ( ! is_array( $links ) ) {
+				continue;
+			}
+			$remaining = self::prune_links( $links, $is_term, $sites );
+			if ( null === $remaining ) {
+				return null;
+			}
+			if ( $remaining === $links || get_option( $row->option_name ) !== $links ) {
+				continue;
+			}
+			if ( empty( $remaining ) ) {
+				if ( self::delete( $row->option_name, (int) $match[2], $is_term ) ) {
+					++$deleted;
+				}
+			} elseif ( update_option( $row->option_name, $remaining ) ) {
+				++$updated;
+			}
+			if ( $wpdb->last_error ) {
+				return null;
+			}
+		}
+		return array( 'cursor' => $cursor, 'deleted' => $deleted, 'updated' => $updated, 'complete' => count( $rows ) < self::LIMIT );
+	}
+
+	/**
+	 * Match MSLS's WPLANG convention (empty means en_US).
+	 * Unknown or duplicate languages cannot identify a destination safely.
+	 *
+	 * @return array<string, int|null>|null
+	 */
+	public static function language_sites(): ?array {
+		global $wpdb;
+
+		$map = array();
+		$offset = 0;
+		do {
+			$ids = $wpdb->get_col( $wpdb->prepare(
+				"SELECT blog_id FROM {$wpdb->blogs} WHERE site_id = %d AND deleted = 0 AND archived = 0 AND spam = 0 ORDER BY blog_id LIMIT 100 OFFSET %d",
+				get_current_network_id(),
+				$offset
 			) );
 			if ( $wpdb->last_error ) {
 				return null;
 			}
-			if ( $orphan && delete_option( $row->option_name ) ) {
-				++$deleted;
+			foreach ( $ids as $id ) {
+				switch_to_blog( (int) $id );
+				try {
+					$language = $wpdb->get_var( "SELECT option_value FROM {$wpdb->options} WHERE option_name = 'WPLANG'" );
+					if ( $wpdb->last_error ) {
+						return null;
+					}
+					$language = $language ? (string) $language : 'en_US';
+					$map[ $language ] = array_key_exists( $language, $map ) ? null : (int) $id;
+				} finally {
+					restore_current_blog();
+				}
+			}
+			$offset += 100;
+		} while ( 100 === count( $ids ) );
+		return $map;
+	}
+
+	/** Remove only positive numeric references with a uniquely identified target. */
+	public static function prune_links( array $links, bool $is_term, array $sites ): ?array {
+		foreach ( $links as $language => $id ) {
+			if ( ! is_int( $id ) && ( ! is_string( $id ) || ! preg_match( '/\A[1-9][0-9]*\z/', $id ) ) ) {
+				continue;
+			}
+			$target = $sites[ $language ] ?? null;
+			$id = filter_var( $id, FILTER_VALIDATE_INT, array( 'options' => array( 'min_range' => 1 ) ) );
+			if ( ! $target || false === $id ) {
+				continue;
+			}
+			switch_to_blog( (int) $target );
+			try {
+				$exists = self::owner_exists( $id, $is_term );
+			} finally {
+				restore_current_blog();
+			}
+			if ( null === $exists ) {
+				return null;
+			}
+			if ( ! $exists ) {
+				unset( $links[ $language ] );
 			}
 		}
-		return array( 'cursor' => $cursor, 'deleted' => $deleted, 'complete' => count( $rows ) < self::LIMIT );
+		return $links;
+	}
+
+	/** A failed query must never be interpreted as a missing object. */
+	private static function owner_exists( int $id, bool $is_term ): ?bool {
+		global $wpdb;
+
+		$table = $is_term ? $wpdb->terms : $wpdb->posts;
+		$column = $is_term ? 'term_id' : 'ID';
+		$found = $wpdb->get_var( $wpdb->prepare( "SELECT {$column} FROM {$table} WHERE {$column} = %d LIMIT 1", $id ) );
+		return $wpdb->last_error ? null : null !== $found;
+	}
+
+	/** MSLS delete() uses delete_option(); fall back when MSLS is inactive. */
+	private static function delete( string $name, int $id, bool $is_term ): bool {
+		$class = $is_term ? \lloc\Msls\Options\Tax\Tax::class : \lloc\Msls\Options\Post\Post::class;
+		if ( class_exists( $class ) && is_array( get_option( $name ) ) ) {
+			$options = new $class( $id );
+			if ( $options->get_option_name() === $name ) {
+				$options->delete();
+				return false === get_option( $name );
+			}
+		}
+		return delete_option( $name );
 	}
 
 	public static function clear_current_schedule(): void {

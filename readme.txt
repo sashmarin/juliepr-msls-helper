@@ -78,28 +78,37 @@ network. The helper does not regenerate missing rewrite rules during a lookup.
 
 == Orphaned MSLS Options ==
 
-Daily cleanup deletes only options named exactly msls_NUMBER or
-msls_term_NUMBER whose corresponding local post or term is absent from that
-site's database. Existing posts of every type and status (including drafts and
-trash), existing terms, and other option names are preserved. The option values
-and translation references on other sites are not edited. Shared attachment
-records on other sites do not count as local owners of these MSLS options.
+Daily cleanup inspects only options named exactly msls_NUMBER or
+msls_term_NUMBER. It deletes the option if its local post or term is absent.
+For an existing owner, it removes individual language references whose post or
+term no longer exists on the destination site. An array emptied by this pruning
+is deleted; valid remaining references retain their original values.
+
+Languages are resolved to active sites in the current network by WPLANG, using
+MSLS's en_US default for an empty locale. Unknown languages, duplicate locales,
+malformed values and non-array options with existing owners are preserved.
+Existing drafts, private posts and trashed posts count as valid objects.
+Shared attachment records on other sites do not count as local owners.
+
+Whole-option deletion uses MSLS Post/Tax delete() where available, with a
+WordPress Options API fallback. Partial arrays use update_option() to preserve
+values and autoload settings; MSLS save() would delete and recreate the row.
+WordPress object caches are invalidated through these APIs.
 
 The network's main site hosts the daily WP-Cron event. Each invocation processes
-one active site and up to 100 orphan candidates; further batches run at least a
+one active site and up to 100 MSLS option candidates; further batches run at least a
 minute apart. Deleted, archived and spam sites are skipped. The first run is
 scheduled one minute after the next request with the plugin enabled. WP-Cron
 needs traffic on the network's main site or an external cron runner targeting
 that site, so these are scheduled times.
-Database errors stop a batch rather than treating owners as missing. Options
-are removed with delete_option() to invalidate WordPress object caches.
+Database errors stop a batch rather than treating owners or translations as missing.
 
 Disabling cleanup removes its scheduled events and progress. Deactivation and
 uninstall also remove this runtime state, while saved settings follow the
 uninstall preference. Cleanup works without MSLS being active.
 
 On a disposable multisite, run wp eval-file tests/orphaned-options.php from
-this directory. This test performs real option cleanup on the current site.
+this directory. This test creates disposable fixtures and performs real option writes.
 
 == Installation ==
 
@@ -135,7 +144,8 @@ not depend on the selected post-fields importer.
 
 = 1.1.0 =
 * Clean up orphaned msls_NUMBER and msls_term_NUMBER options daily across active network sites.
-* Process up to 100 candidates per WP-Cron batch, preserving options for existing posts and terms.
+* Remove references to missing translations, preserve valid links and delete emptied options.
+* Process up to 100 MSLS options per WP-Cron batch and resume from a saved cursor.
 * Add an enabled-by-default network setting; clear scheduled cleanup and progress on disable, deactivation or uninstall.
 
 = 1.0.0 =

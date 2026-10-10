@@ -163,11 +163,15 @@ In the parent checkout, inspect `includes/ContentImport/Importers/ImportersBaseF
 For Quick Create, inspect `includes/RestApi/RestApi.php`.
 
 - Orphan cleanup runs daily on the network main site, independently of MSLS.
-  Process one active site and up to 100 orphan candidates per cron invocation,
+  Process one active site and up to 100 MSLS option candidates per cron invocation,
   continuing in single events. Match only exact numeric MSLS post/term option
   names and confirm local ownership through database tables, regardless of status.
-  Delete with the Options API for cache invalidation. Preserve other names and
-  translation values. Clear cron/progress/locks on disable, deactivate and uninstall.
+  For existing owners, resolve languages by WPLANG (empty means en_US) across
+  active network sites. Remove only positive numeric references to missing local
+  target objects; preserve unknown/ambiguous languages and malformed values.
+  Delete emptied arrays. Use MSLS Post/Tax delete() for whole arrays where available
+  and update_option() for partial arrays; preserve valid values and autoload.
+  Scan all numeric MSLS options, not only missing owners. Clear cron/progress/locks on disable, deactivate and uninstall.
 
 ## Coding and localization
 

@@ -81,5 +81,5 @@ msgid "Clean up orphaned MSLS options daily"
 msgstr "Ежедневно очищать осиротевшие опции MSLS"
 
 #: includes/Settings.php
-msgid "Delete msls_ID and msls_term_ID options only when the corresponding post or term no longer exists on that site. All active sites in this network are processed in batches through WP-Cron."
-msgstr "Удалять опции msls_ID и msls_term_ID, только если соответствующей записи или термина больше нет на этом сайте. Все активные сайты этой сети обрабатываются пакетами через WP-Cron."
+msgid "Clean up msls_ID and msls_term_ID options and references to missing translations. Preserve valid links and languages without a unique target site. All active sites in this network are processed in batches through WP-Cron."
+msgstr "Очищать опции msls_ID и msls_term_ID и ссылки на отсутствующие переводы. Сохранять действующие связи и языки, для которых нельзя однозначно определить сайт. Все активные сайты этой сети обрабатываются пакетами через WP-Cron."

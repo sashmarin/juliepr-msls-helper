@@ -1,7 +1,7 @@
 <?php
 /**
  * Disposable multisite only: wp eval-file tests/orphaned-options.php
- * Performs real cleanup of orphaned options on the current site.
+ * Creates disposable fixtures and performs real option writes on the current site.
  */
 
 declare(strict_types=1);
@@ -28,16 +28,13 @@ $post_ids = array();
 $options = array();
 $term_id = 0;
 $blog_id = get_current_blog_id();
-$value = array( 'ru_RU' => 123, 'en_US' => 456 );
+$value = array( '__helper_unknown_a__' => 123, '__helper_unknown_b__' => 456 );
 
 try {
-	// Remove pre-existing orphans first so batch counts reflect only our fixtures.
-	$cursor = 0;
-	do {
-		$result = OrphanedOptions::clean_site( $cursor );
-		$check( null !== $result, 'Initial cleanup query failed.' );
-		$cursor = $result['cursor'];
-	} while ( ! $result['complete'] );
+	// Restrict scans to options inserted after the fixture boundary.
+	global $wpdb;
+	$fixture_cursor = (int) $wpdb->get_var( "SELECT MAX(option_id) FROM {$wpdb->options}" );
+	$check( ! $wpdb->last_error, 'Fixture boundary lookup failed.' );
 
 	foreach ( array( 'publish', 'draft', 'private', 'trash' ) as $status ) {
 		$id = wp_insert_post( array( 'post_title' => 'MSLS orphan cleanup test', 'post_status' => $status ), true );
@@ -79,10 +76,16 @@ try {
 	foreach ( $options as $name ) {
 		get_option( $name );
 	}
-	$first = OrphanedOptions::clean_site();
+	$first = OrphanedOptions::clean_site( $fixture_cursor );
 	$check( null !== $first && $first['deleted'] > 0 && $first['deleted'] <= 100 && ! $first['complete'], 'Batch must stop after 100 candidates.' );
-	$second = OrphanedOptions::clean_site( $first['cursor'] );
-	$check( null !== $second && 105 === $first['deleted'] + $second['deleted'] && $second['complete'], 'Cursor did not finish remaining orphans.' );
+	$deleted = $first['deleted'];
+	$result = $first;
+	do {
+		$result = OrphanedOptions::clean_site( $result['cursor'] );
+		$check( null !== $result, 'Continuation query failed.' );
+		$deleted += $result['deleted'];
+	} while ( ! $result['complete'] );
+	$check( 105 === $deleted, 'Cursor did not finish remaining orphans.' );
 	foreach ( $orphans as $name ) {
 		$check( false === get_option( $name ), 'Orphan retained or stale option cache: ' . $name );
 	}
@@ -91,13 +94,109 @@ try {
 	}
 	$check( get_current_blog_id() === $blog_id, 'Cleanup changed blog context.' );
 
+	// Exercise reference pruning with a controlled language-to-site map.
+	$sites = array( 'known' => $blog_id, 'ambiguous' => null );
+	$links = array( 'known' => $missing_id, 'unknown' => $missing_id, 'ambiguous' => $missing_id );
+	$check( array( 'unknown' => $missing_id, 'ambiguous' => $missing_id ) === OrphanedOptions::prune_links( $links, false, $sites ), 'Unknown or ambiguous language must survive.' );
+	$check( array() === OrphanedOptions::prune_links( array( 'known' => $missing_id ), false, $sites ), 'Missing post reference survived.' );
+	$check( array() === OrphanedOptions::prune_links( array( 'known' => $missing_id ), true, $sites ), 'Missing term reference survived.' );
+	foreach ( array( true, 1.0, array( 1 ), 'bad', 0, -1 ) as $invalid ) {
+		$links = array( 'known' => $invalid );
+		$check( $links === OrphanedOptions::prune_links( $links, false, $sites ), 'Malformed value changed.' );
+	}
+	foreach ( $post_ids as $id ) {
+		$links = array( 'known' => $id );
+		$check( $links === OrphanedOptions::prune_links( $links, false, $sites ), 'Existing draft/private/trash reference changed.' );
+	}
+	$links = array( 'known' => $term_id );
+	$check( $links === OrphanedOptions::prune_links( $links, true, $sites ), 'Existing term reference changed.' );
+	$check( get_current_blog_id() === $blog_id, 'Reference pruning did not restore blog context.' );
+
+	// Cross-site reads must restore an already switched context.
+	$other_id = 0;
+	foreach ( get_sites( array( 'network_id' => get_current_network_id(), 'fields' => 'ids', 'number' => 100 ) ) as $candidate ) {
+		if ( (int) $candidate !== $blog_id ) {
+			$other_id = (int) $candidate;
+			break;
+		}
+	}
+	if ( $other_id ) {
+		$target_post = 0;
+		switch_to_blog( $other_id );
+		try {
+			$target_post = wp_insert_post( array( 'post_title' => 'MSLS cross-site cleanup test', 'post_status' => 'draft' ), true );
+			$check( ! is_wp_error( $target_post ) && $target_post > 0, 'Target post fixture failed.' );
+		} finally {
+			restore_current_blog();
+		}
+		try {
+			$links = array( 'target' => $target_post );
+			$check( $links === OrphanedOptions::prune_links( $links, false, array( 'target' => $other_id ) ), 'Existing cross-site draft was pruned.' );
+			switch_to_blog( $other_id );
+			try {
+				wp_delete_post( $target_post, true );
+			} finally {
+				restore_current_blog();
+			}
+			$check( array() === OrphanedOptions::prune_links( $links, false, array( 'target' => $other_id ) ), 'Deleted cross-site translation survived.' );
+			$check( get_current_blog_id() === $blog_id, 'Cross-site pruning did not restore context.' );
+		} finally {
+			switch_to_blog( $other_id );
+			try {
+				wp_delete_post( $target_post, true );
+			} finally {
+				restore_current_blog();
+			}
+		}
+	}
+
+	// A missing target table must abort pruning, not mark its records as absent.
+	$bad_site = 1000000000;
+	while ( get_site( $bad_site ) ) {
+		++$bad_site;
+	}
+	$previous_suppression = $wpdb->suppress_errors( true );
+	try {
+		$check( null === OrphanedOptions::prune_links( array( 'broken_db' => 1 ), false, array( 'broken_db' => $bad_site ) ), 'Database error interpreted as missing translation.' );
+		$check( get_current_blog_id() === $blog_id, 'Error path did not restore blog context.' );
+	} finally {
+		$wpdb->suppress_errors( $previous_suppression );
+	}
+
+	// Exercise saved partial and empty arrays with actual uniquely mapped locales.
+	$map = OrphanedOptions::language_sites();
+	$check( null !== $map, 'Language lookup failed.' );
+	$language = array_search( $blog_id, $map, true );
+	if ( false !== $language ) {
+		$name = 'msls_' . $post_ids[1];
+		$options[] = $name;
+		update_option( $name, array( $language => $missing_id, '__helper_unknown__' => 77 ) );
+		$cursor = $fixture_cursor;
+		do {
+			$result = OrphanedOptions::clean_site( $cursor );
+			$check( null !== $result, 'Partial link cleanup failed.' );
+			$cursor = $result['cursor'];
+		} while ( ! $result['complete'] );
+		$check( array( '__helper_unknown__' => 77 ) === get_option( $name ), 'Partial cleanup did not preserve remaining links.' );
+		update_option( $name, array( $language => $missing_id ) );
+		$cursor = $fixture_cursor;
+		do {
+			$result = OrphanedOptions::clean_site( $cursor );
+			$check( null !== $result, 'Empty link cleanup failed.' );
+			$cursor = $result['cursor'];
+		} while ( ! $result['complete'] );
+		$check( false === get_option( $name ), 'Empty option survived with an existing local owner.' );
+	} else {
+		echo "Saved-link checks skipped: current site locale is ambiguous in this network.\n";
+	}
+
 	// Permanent removal makes the same names eligible; trash alone did not.
 	wp_delete_post( $post_ids[0], true );
 	wp_delete_term( $term_id, 'category' );
 	// MSLS may already remove these options through its own deletion hooks.
 	add_option( 'msls_' . $post_ids[0], $value, '', false );
 	add_option( 'msls_term_' . $term_id, $value, '', false );
-	$final = OrphanedOptions::clean_site();
+	$final = OrphanedOptions::clean_site( $fixture_cursor );
 	$check( null !== $final && 2 === $final['deleted'], 'Permanently deleted owners were not cleaned.' );
 	$check( false === get_option( 'msls_' . $post_ids[0] ) && false === get_option( 'msls_term_' . $term_id ), 'Deleted-owner options survived.' );
 } finally {
@@ -112,4 +211,4 @@ try {
 	}
 }
 
-echo "Orphan detection, existing owners, exact names, batching and cache checks passed.\n";
+echo "Orphan owners, translation references, exact names, batching and cache checks passed.\n";
